@@ -1,0 +1,89 @@
+services:
+  spark-iceberg:
+    image: tabulario/spark-iceberg
+    container_name: spark-iceberg
+    networks:
+      iceberg_net:
+    depends_on:
+      - rest
+      - seaweedfs
+    volumes:
+      - ./warehouse:/home/iceberg/warehouse
+      - ./notebooks:/home/iceberg/notebooks/notebooks
+      - ./spark/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro   # edited copy (run setup.sh first)
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_REGION=us-east-1
+    ports:
+      - 8888:8888    # Jupyter
+      - 8080:8080    # Spark UI
+      - 10000:10000
+      - 10001:10001
+
+  rest:
+    image: apache/iceberg-rest-fixture
+    container_name: iceberg-rest
+    networks:
+      iceberg_net:
+    depends_on:
+      - seaweedfs
+    ports:
+      - 8181:8181
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_REGION=us-east-1
+      - CATALOG_WAREHOUSE=s3://warehouse/
+      - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
+      - CATALOG_S3_ENDPOINT=http://seaweedfs:9000
+      - CATALOG_S3_PATH__STYLE__ACCESS=true
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    container_name: seaweedfs
+    hostname: seaweedfs
+    command: >
+      server
+      -dir=/data
+      -ip=seaweedfs
+      -ip.bind=0.0.0.0
+      -master.volumeSizeLimitMB=1024
+      -s3
+      -s3.port=9000
+      -s3.config=/etc/seaweedfs/s3.json
+    volumes:
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+      - seaweed-data:/data
+    networks:
+      iceberg_net:
+    ports:
+      - 9000:9000   # S3 API
+      - 9333:9333   # Master UI
+      - 8889:8888   # Filer UI (8888 is taken by Jupyter)
+
+  create-bucket:
+    image: curlimages/curl:latest
+    container_name: create-bucket
+    depends_on:
+      - seaweedfs
+    networks:
+      iceberg_net:
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        until curl -s -o /dev/null http://seaweedfs:9000/; do
+          echo "waiting for SeaweedFS S3..."; sleep 2;
+        done
+        curl -sf -o /dev/null --aws-sigv4 aws:amz:us-east-1:s3 --user admin:password \
+          --head http://seaweedfs:9000/warehouse \
+        || curl -sSf --aws-sigv4 aws:amz:us-east-1:s3 --user admin:password \
+          -X PUT http://seaweedfs:9000/warehouse
+        echo "bucket 'warehouse' ready"
+
+volumes:
+  seaweed-data:
+
+networks:
+  iceberg_net:
