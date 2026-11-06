@@ -25,7 +25,7 @@ setup.sh                  # builds spark/spark-defaults.conf pointing at seaweed
 
 ## Step 0 – Prerequisites
 
-Docker and Docker Compose. Clone the repo:
+Docker and Docker Compose, or Podman with `docker-compose` (`alias docker=podman` or a `docker` symlink to `podman`; on macOS run `podman machine start` first). Clone the repo:
 
 ```bash
 git clone https://github.com/mehmetkadriumay/OSDU_AI_SIG_Prototype.git
@@ -141,6 +141,8 @@ docker compose down -v     # also delete SeaweedFS data
 | `UnknownHostException: warehouse.seaweedfs` | Path-style access is off in Spark. Check `s3.path-style-access true` is in the config. |
 | `CREATE DATABASE` works but `CREATE TABLE` fails | REST catalog can't reach SeaweedFS. Check `CATALOG_S3_ENDPOINT` / `CATALOG_S3_PATH__STYLE__ACCESS`; `docker logs iceberg-rest`. |
 | `403 / SignatureDoesNotMatch` | Keys in `seaweedfs/s3.json` don't match the `AWS_*` env vars. |
+| PyIceberg `curlCode: 6, Couldn't resolve host name` or `curlCode: 7, Couldn't connect to server` on `tbl.append(...)` | The notebook's PyIceberg catalog is still using the image default `http://minio:9000` (or `localhost`). The compose file overrides it with `PYICEBERG_CATALOG__DEFAULT__*` env vars; recreate the container (`docker compose up -d --force-recreate spark-iceberg`) and use `load_catalog("default")` without passing `s3.endpoint`, or pass `http://seaweedfs:9000`. |
+| `docker-credential-desktop: executable file not found` (Podman) | Leftover Docker Desktop setting: remove `"credsStore": "desktop"` from `~/.docker/config.json`. |
 | `create-bucket` keeps waiting | SeaweedFS didn't start: `docker logs seaweedfs`. |
 
 One-off override without editing the config:

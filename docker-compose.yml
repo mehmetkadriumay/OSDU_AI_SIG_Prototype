@@ -15,6 +15,13 @@ services:
       - AWS_ACCESS_KEY_ID=admin
       - AWS_SECRET_ACCESS_KEY=password
       - AWS_REGION=us-east-1
+      # PyIceberg (Jupyter notebooks) reads /root/.pyiceberg.yaml, which the image
+      # ships pointing at http://minio:9000. These env vars override it.
+      - PYICEBERG_CATALOG__DEFAULT__URI=http://rest:8181
+      - PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT=http://seaweedfs:9000
+      - PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID=admin
+      - PYICEBERG_CATALOG__DEFAULT__S3__SECRET_ACCESS_KEY=password
+      - PYICEBERG_CATALOG__DEFAULT__S3__REGION=us-east-1
     ports:
       - 8888:8888    # Jupyter
       - 8080:8080    # Spark UI
