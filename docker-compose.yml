@@ -23,6 +23,10 @@ services:
       - PYICEBERG_CATALOG__DEFAULT__S3__ACCESS_KEY_ID=admin
       - PYICEBERG_CATALOG__DEFAULT__S3__SECRET_ACCESS_KEY=password
       - PYICEBERG_CATALOG__DEFAULT__S3__REGION=us-east-1
+      # Newer AWS SDKs add CRC checksums to every upload by default, which can leave
+      # truncated objects on S3-compatible stores ("Reached the end of stream").
+      - AWS_REQUEST_CHECKSUM_CALCULATION=when_required
+      - AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
     ports:
       - 8888:8888    # Jupyter
       - 8080:8080    # Spark UI
@@ -30,7 +34,9 @@ services:
       - 10001:10001
 
   rest:
-    image: apache/iceberg-rest-fixture
+    # Pinned: newer fixture images reject the %1F namespace separator Spark uses
+    # ("Suspicious Path Character"), which breaks metadata tables like nyc.taxis.snapshots.
+    image: apache/iceberg-rest-fixture:1.8.1
     container_name: iceberg-rest
     networks:
       iceberg_net:
@@ -46,6 +52,8 @@ services:
       - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
       - CATALOG_S3_ENDPOINT=http://seaweedfs:9000
       - CATALOG_S3_PATH__STYLE__ACCESS=true
+      - AWS_REQUEST_CHECKSUM_CALCULATION=when_required
+      - AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
 
   seaweedfs:
     image: chrislusf/seaweedfs:latest

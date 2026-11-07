@@ -15,7 +15,13 @@ Spark and the Iceberg REST catalog address SeaweedFS by its real hostname (`seaw
 | `seaweedfs` | `chrislusf/seaweedfs` | Master + volume + filer + S3 gateway | 9000 (S3), 9333 (master), 8889 (filer) |
 | `create-bucket` | `curlimages/curl` | Creates the `warehouse` bucket | – |
 
-`spark-iceberg` is built from `spark-iceberg/Dockerfile`, which adds one fix on top of `tabulario/spark-iceberg`: it pins `prettytable<3.12` so the `%sql` magic in the notebooks works.
+`spark-iceberg` is built from `spark-iceberg/Dockerfile` on top of `tabulario/spark-iceberg`. It:
+
+- pins `prettytable<3.12` so the `%sql` magic works,
+- adds the Java 17 `--add-opens` flags to the Java (IJava) kernel so Spark can start there,
+- replaces the bundled notebooks with the copies in `spark-iceberg/notebooks/`, fixed for SeaweedFS (endpoint, path-style access, namespace bugs, DuckDB `%sql` setup).
+
+`rest` is pinned to `apache/iceberg-rest-fixture:1.8.1`: newer images reject Spark's `%1F` namespace separator.
 
 ## Repo layout
 
@@ -23,7 +29,9 @@ Spark and the Iceberg REST catalog address SeaweedFS by its real hostname (`seaw
 docker-compose.yml        # the stack
 seaweedfs/s3.json         # SeaweedFS S3 identity (admin / password)
 setup.sh                  # builds spark/spark-defaults.conf pointing at seaweedfs:9000
-spark-iceberg/Dockerfile  # spark-iceberg image + prettytable pin for jupysql
+spark-iceberg/Dockerfile  # spark-iceberg image with the fixes below
+spark-iceberg/notebooks/  # bundled Iceberg/PyIceberg notebooks, fixed for this stack
+spark-iceberg/patch_java_kernel.py
 ```
 
 ## Step 0 – Prerequisites
@@ -194,6 +202,10 @@ docker compose down -v     # also delete SeaweedFS data
 | `%sql`: `KeyError: 'DEFAULT'` | jupysql vs. prettytable ≥ 3.12. Rebuild with `docker compose up -d --build`, or in the notebook `%pip install "prettytable<3.12"` and restart the kernel, or `%config SqlMagic.style = "_DEPRECATED_DEFAULT"`. |
 | `failed to connect to the docker API at unix:///Users/.../.docker/run/docker.sock` (Podman) | `docker-compose` is looking for Docker Desktop. Set `DOCKER_HOST` to the Podman socket (see *Using Podman*). |
 | `podman machine start`: `exec: "krunkit": executable file not found` | Add `/opt/podman/bin` to `PATH`, or `brew tap slp/krunkit && brew install krunkit`. |
+| `BadRequestException: Malformed request ... "Suspicious Path Character" ... nyc%1Ftaxis` on `.snapshots`, `.files`, `.history`, `.refs` or branches | The REST catalog image is too new. Keep `rest` pinned to `apache/iceberg-rest-fixture:1.8.1`. |
+| `EOFException: Reached the end of stream with ... bytes left to read` | Objects were truncated on upload by the AWS SDK's default checksums. Keep `AWS_REQUEST_CHECKSUM_CALCULATION` / `AWS_RESPONSE_CHECKSUM_VALIDATION=when_required` in the compose file, then rerun the notebook so the data is rewritten. |
+| Java notebook: `cannot access class sun.nio.ch.DirectBuffer` | The Java kernel is missing the `--add-opens` flags. Rebuild with `docker compose up -d --build`. |
+| `Namespace nyc does not exist` | Run a notebook that creates `nyc` first (e.g. `Iceberg - Getting Started`). The fixed notebooks create it themselves. |
 | `docker-credential-desktop: executable file not found` (Podman) | Leftover Docker Desktop setting: remove `"credsStore": "desktop"` from `~/.docker/config.json`. |
 | `create-bucket` keeps waiting | SeaweedFS didn't start: `docker logs seaweedfs`. |
 
