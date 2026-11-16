@@ -139,11 +139,6 @@ SELECT * FROM demo.nyc.taxis;
   SELECT snapshot_id, operation FROM demo.nyc.taxis.snapshots;
   SELECT file_path FROM demo.nyc.taxis.files;
   ```
-- From the host (AWS CLI):
-  ```bash
-  AWS_ACCESS_KEY_ID=admin AWS_SECRET_ACCESS_KEY=password AWS_REGION=us-east-1 \
-  aws --endpoint-url http://localhost:9000 s3 ls s3://warehouse/ --recursive
-  ```
 
 ## Step 9 – Try Iceberg features (optional)
 
