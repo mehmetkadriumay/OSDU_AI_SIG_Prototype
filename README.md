@@ -4,7 +4,7 @@ A variant of the official [Spark and Iceberg Quickstart](https://iceberg.apache.
 
 Spark and the Iceberg REST catalog address SeaweedFS by its real hostname (`seaweedfs:9000`) using **path-style** S3 — no `minio` network aliases or virtual-host tricks.
 
-> Status: prototype, not yet validated end-to-end. SeaweedFS flags may need adjusting for your SeaweedFS version.
+> Status: local prototype. The WSLC path below has been verified with Spark SQL writes/reads, Iceberg metadata queries, PyIceberg reads/appends, and Jupyter SQL rendering against SeaweedFS.
 
 ## Architecture
 
@@ -17,7 +17,7 @@ Spark and the Iceberg REST catalog address SeaweedFS by its real hostname (`seaw
 
 `spark-iceberg` is built from `spark-iceberg/Dockerfile` on top of `tabulario/spark-iceberg`. It:
 
-- pins `prettytable<3.12` so the `%sql` magic works,
+- sets Jupyter's SQL style to `_DEPRECATED_DEFAULT` so `%sql` works with the bundled prettytable version, without an extra package download,
 - adds the Java 17 `--add-opens` flags to the Java (IJava) kernel so Spark can start there,
 - replaces the bundled notebooks with the copies in `spark-iceberg/notebooks/`, fixed for SeaweedFS (endpoint, path-style access, namespace bugs).
 
@@ -29,12 +29,82 @@ Spark and the Iceberg REST catalog address SeaweedFS by its real hostname (`seaw
 docker-compose.yml        # the stack
 seaweedfs/s3.json         # SeaweedFS S3 identity (admin / password)
 setup.sh                  # builds spark/spark-defaults.conf pointing at seaweedfs:9000
+setup-wslc.ps1            # Windows WSLC startup, status, and shutdown (no Docker engine)
 spark-iceberg/Dockerfile  # spark-iceberg image with the fixes below
 spark-iceberg/notebooks/  # bundled Iceberg/PyIceberg notebooks, fixed for this stack
 spark-iceberg/patch_java_kernel.py
 ```
 
-## Step 0 – Prerequisites
+## Windows: run with WSLC instead of Docker
+
+WSLC is the **Windows Subsystem for Linux Container CLI** (`wslc.exe`), not a command inside an Ubuntu distribution. This path uses WSLC directly: Docker Desktop, the Docker engine, Docker Compose, and `setup.sh` are not needed. It still uses the existing container images and Dockerfile.
+
+### Prerequisites
+
+- Windows with WSL and a WSLC-enabled WSL installation. Confirm `wslc --help` and `wslc info` work in PowerShell; having `wsl.exe` alone is not sufficient.
+- Git and internet access to pull the images. Allow roughly 8 GB of memory for the stack.
+- Available localhost ports: 8888, 8080, 10000, 10001, 8181, 9000, 9333, and 8889. Stop any previous instance of this stack first; the script does not stop unrelated containers.
+
+### Start from PowerShell
+
+```powershell
+git clone https://github.com/mehmetkadriumay/OSDU_AI_SIG_Prototype.git
+Set-Location .\OSDU_AI_SIG_Prototype
+.\setup-wslc.ps1
+```
+
+If PowerShell blocks the script under your execution policy, and your organization's policy permits it, run it with a process-only override:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup-wslc.ps1
+```
+
+The script builds the Spark image with `wslc build`, generates the Spark configuration, creates the `osdu-iceberg-net` network and `osdu-seaweed-data` volume, starts SeaweedFS, creates the `warehouse` bucket, and starts the REST catalog and Spark/Jupyter. It waits for readiness before reporting success. Re-running it reuses existing stack containers and starts stopped ones.
+
+Open:
+
+| Service | URL |
+|---|---|
+| Jupyter notebooks | http://localhost:8888 |
+| Spark history UI | http://localhost:8080 |
+| Iceberg REST configuration | http://localhost:8181/v1/config |
+| SeaweedFS filer | http://localhost:8889/buckets/warehouse/ |
+| SeaweedFS master | http://localhost:9333 |
+
+Ports are bound to loopback only. These images and demo credentials are for local testing, not a secured production deployment.
+
+### Run the SQL example
+
+```powershell
+wslc exec -it osdu-spark-iceberg spark-sql
+# Or start a Python session:
+wslc exec -it osdu-spark-iceberg pyspark
+```
+
+Run the SQL in **Steps 5–9** below, or open a bundled notebook in Jupyter. The internal endpoints remain `http://seaweedfs:9000` and `http://rest:8181`; do not replace them with `localhost` inside containers.
+
+### Status, logs, and shutdown
+
+```powershell
+.\setup-wslc.ps1 status
+wslc logs --tail 50 osdu-seaweedfs
+wslc logs --tail 50 osdu-iceberg-rest
+wslc logs --tail 50 osdu-spark-iceberg
+
+# Remove only this stack's containers; preserve its data and network:
+.\setup-wslc.ps1 down
+
+# Start again (also rebuilds the image):
+.\setup-wslc.ps1 up
+```
+
+SeaweedFS objects persist in the WSLC volume `osdu-seaweed-data`. Local `warehouse` and `notebooks` folders are bind-mounted just as in Compose; save your own notebooks in Jupyter's `notebooks` subfolder to retain them. The REST fixture is not configured with durable catalog storage: restarting it can lose table registrations even though the S3 objects remain. This is a disposable quickstart, not a durable catalog deployment.
+
+After changing the Dockerfile, bundled notebooks, environment settings, or mounts, run `down` followed by `up` to recreate the containers with the changes. Do not remove the data volume unless you intend to delete its stored objects.
+
+If startup fails, inspect the logs above, fix the problem, and rerun `up`. A timeout on port 8888 or 8181 can indicate a container startup failure or a conflicting port. WSLC resources are separate from Docker Desktop's resources; use `wslc`, not `docker`, to inspect this deployment.
+
+## Docker / Podman: Step 0 – Prerequisites
 
 Docker and Docker Compose, or Podman with `docker-compose` (`alias docker=podman` or a `docker` symlink to `podman`; on macOS run `podman machine start` first). Clone the repo:
 
@@ -166,7 +236,7 @@ docker compose down -v     # also delete SeaweedFS data
 | PyIceberg `curlCode: 6, Couldn't resolve host name` or `curlCode: 7, Couldn't connect to server` on `tbl.append(...)` | The notebook's PyIceberg catalog is still using the image default `http://minio:9000` (or `localhost`). The compose file overrides it with `PYICEBERG_CATALOG__DEFAULT__*` env vars; recreate the container (`docker compose up -d --force-recreate spark-iceberg`) and use `load_catalog("default")` without passing `s3.endpoint`, or pass `http://seaweedfs:9000`. |
 | Jupyter "Kernel Restarting" on `sc.to_arrow().to_pandas()` | Out of memory. Raise the Podman VM memory (see *Using Podman*) or add `limit=` / `selected_fields=` to `tbl.scan(...)`. |
 | `%sql`: `Catalog Error: Table with name df does not exist!` | See *Querying PyIceberg data with DuckDB*: create a real DuckDB table and make sure the right connection is active. |
-| `%sql`: `KeyError: 'DEFAULT'` | jupysql vs. prettytable ≥ 3.12. Rebuild with `docker compose up -d --build`, or in the notebook `%pip install "prettytable<3.12"` and restart the kernel, or `%config SqlMagic.style = "_DEPRECATED_DEFAULT"`. |
+| `%sql`: `KeyError: 'DEFAULT'` | jupysql vs. prettytable ≥ 3.12. Rebuild/recreate the image to apply the bundled IPython configuration (`docker compose up -d --build`, or WSLC `down` then `up`), or run `%config SqlMagic.style = "_DEPRECATED_DEFAULT"` in the notebook. |
 | `failed to connect to the docker API at unix:///Users/.../.docker/run/docker.sock` (Podman) | `docker-compose` is looking for Docker Desktop. Set `DOCKER_HOST` to the Podman socket (see *Using Podman*). |
 | `podman machine start`: `exec: "krunkit": executable file not found` | Add `/opt/podman/bin` to `PATH`, or `brew tap slp/krunkit && brew install krunkit`. |
 | `BadRequestException: Malformed request ... "Suspicious Path Character" ... nyc%1Ftaxis` on `.snapshots`, `.files`, `.history`, `.refs` or branches | The REST catalog image is too new. Keep `rest` pinned to `apache/iceberg-rest-fixture:1.8.1`. |

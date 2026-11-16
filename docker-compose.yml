@@ -1,6 +1,6 @@
 services:
   spark-iceberg:
-    build: ./spark-iceberg          # tabulario/spark-iceberg + prettytable pin for jupysql
+    build: ./spark-iceberg          # tabulario/spark-iceberg + jupysql style compatibility
     image: osdu-spark-iceberg:local
     container_name: spark-iceberg
     networks:
