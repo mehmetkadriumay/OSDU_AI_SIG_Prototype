@@ -30,6 +30,7 @@ docker-compose.yml        # the stack
 seaweedfs/s3.json         # SeaweedFS S3 identity (admin / password)
 setup.sh                  # builds spark/spark-defaults.conf pointing at seaweedfs:9000
 setup-wslc.ps1            # Windows WSLC startup, status, and shutdown (no Docker engine)
+notebooks/                # your saved notebooks, SQL, loader, reference workbook, and offline wheels
 spark-iceberg/Dockerfile  # spark-iceberg image with the fixes below
 spark-iceberg/notebooks/  # bundled Iceberg/PyIceberg notebooks, fixed for this stack
 spark-iceberg/patch_java_kernel.py
@@ -66,6 +67,7 @@ Open:
 | Service | URL |
 |---|---|
 | Jupyter notebooks | http://localhost:8888 |
+| Your saved notebooks | http://localhost:8888/tree/notebooks |
 | Spark history UI | http://localhost:8080 |
 | Iceberg REST configuration | http://localhost:8181/v1/config |
 | SeaweedFS filer | http://localhost:8889/buckets/warehouse/ |
@@ -99,6 +101,36 @@ wslc logs --tail 50 osdu-spark-iceberg
 ```
 
 SeaweedFS objects persist in the WSLC volume `osdu-seaweed-data`. Local `warehouse` and `notebooks` folders are bind-mounted just as in Compose; save your own notebooks in Jupyter's `notebooks` subfolder to retain them. The REST fixture is not configured with durable catalog storage: restarting it can lose table registrations even though the S3 objects remain. This is a disposable quickstart, not a durable catalog deployment.
+
+### Save notebooks to GitHub and restore on deployment
+
+The repository's `notebooks` directory contains:
+
+- `Create OSDU Tables.ipynb` and its `osdu_well_wellbore_iceberg.sql` input.
+- `load_iceberg_reference_data.ipynb`, its Python loader, `AllReferenceValues.iceberg.xlsx`, and offline packages in `wheels`.
+- `Load Reference Data into Iceberg Tables.ipynb` (an empty notebook exported as-is).
+
+Both WSLC and Compose mount this directory at `/home/iceberg/notebooks/notebooks`. After cloning or pulling the repository, startup makes these files available automatically at http://localhost:8888/tree/notebooks; no manual upload or notebook execution is performed. Changes saved in that Jupyter folder are written directly to the repository on Windows and survive container recreation. Keep companion files in that same folder so relative paths resolve.
+
+The OSDU notebooks expect an Iceberg-enabled PySpark session with a catalog named `osdu_iceberg`; the bundled quickstart config names its catalog `demo`. Configure your session accordingly before running the OSDU notebooks, as described in the SQL file's prerequisites. Reference loading requires your deployment's ACL/legal settings and retains source attribution; review applicable data licenses before redistribution.
+
+To export another notebook that was saved at the container's top level, run this from the repository directory in PowerShell (save it in Jupyter first):
+
+```powershell
+wslc cp 'osdu-spark-iceberg:/home/iceberg/notebooks/My Notebook.ipynb' .\notebooks\
+```
+
+The original is left untouched. Open the exported copy under Jupyter's `notebooks` folder for future edits. Before publishing, clear saved outputs in Jupyter and check notebook code and companion files for credentials or private data. Checkpoint/cache directories are ignored, but notebook files and their inputs are tracked:
+
+```powershell
+git add -- notebooks
+git diff --cached --stat
+git commit -m "Save notebooks and companion files"
+git pull --rebase
+git push
+```
+
+For future deployments, run `git pull` before `.\setup-wslc.ps1 up`. The saved notebooks are bind-mounted from the checkout rather than baked into the image, so they also update in an already running container. Back up or commit local notebook edits before pulling.
 
 After changing the Dockerfile, bundled notebooks, environment settings, or mounts, run `down` followed by `up` to recreate the containers with the changes. Do not remove the data volume unless you intend to delete its stored objects.
 

@@ -1,4 +1,6 @@
 spark/
 warehouse/
-/notebooks/
+/notebooks/**/.ipynb_checkpoints/
+/notebooks/**/__pycache__/
+/notebooks/**/*.pyc
 *.bak

@@ -143,4 +143,4 @@ Invoke-StackContainer 'osdu-spark-iceberg' ($Aws + @(
     'osdu-spark-iceberg:local'
 ))
 Wait-Http 'http://localhost:8888' 'osdu-spark-iceberg'
-Write-Output 'Ready: Jupyter http://localhost:8888 | Iceberg REST http://localhost:8181/v1/config | Filer http://localhost:8889'
+Write-Output 'Ready: Saved notebooks http://localhost:8888/tree/notebooks | Iceberg REST http://localhost:8181/v1/config | Filer http://localhost:8889'
