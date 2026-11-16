@@ -19,7 +19,7 @@ Spark and the Iceberg REST catalog address SeaweedFS by its real hostname (`seaw
 
 - pins `prettytable<3.12` so the `%sql` magic works,
 - adds the Java 17 `--add-opens` flags to the Java (IJava) kernel so Spark can start there,
-- replaces the bundled notebooks with the copies in `spark-iceberg/notebooks/`, fixed for SeaweedFS (endpoint, path-style access, namespace bugs, DuckDB `%sql` setup).
+- replaces the bundled notebooks with the copies in `spark-iceberg/notebooks/`, fixed for SeaweedFS (endpoint, path-style access, namespace bugs).
 
 `rest` is pinned to `apache/iceberg-rest-fixture:1.8.1`: newer images reject Spark's `%1F` namespace separator.
 
@@ -147,34 +147,6 @@ ALTER TABLE demo.nyc.taxis ADD COLUMN tip double;
 DELETE FROM demo.nyc.taxis WHERE trip_id = 1000373;
 SELECT * FROM demo.nyc.taxis VERSION AS OF <first_snapshot_id>;  -- time travel
 ```
-
-## Querying PyIceberg data with DuckDB (`%sql`) in Jupyter
-
-The `PyIceberg - Getting Started` notebook loads a table into a pandas `df` and queries it with `%sql`. Two things make this work reliably:
-
-```python
-tbl = cat.load_table("default.taxis")
-sc = tbl.scan(row_filter="tpep_pickup_datetime >= '2021-05-01T00:00:00.000000'")
-df = sc.to_arrow().to_pandas()          # needs a VM with enough memory, or add limit=... to scan()
-
-import duckdb
-conn = duckdb.connect()
-conn.execute("CREATE OR REPLACE TABLE df AS SELECT * FROM df")   # real table, visible to %sql
-
-%load_ext sql
-%config SqlMagic.autopandas = True
-%config SqlMagic.feedback = False
-%config SqlMagic.displaycon = False
-%sql conn --alias duckdb                # instead of %sql duckdb:///:memory:
-```
-
-```sql
-%sql SELECT * FROM df LIMIT 20
-```
-
-- Use a real `CREATE TABLE`, not `conn.register(...)`: jupysql runs queries on a cursor, and cursors can't see registered (temporary) views.
-- Don't also run `%sql duckdb:///:memory:`. It creates a second, empty database and makes it the active connection. Check with `%sql --connections` (the active one has `*`).
-- If the table changes, rerun the `CREATE OR REPLACE TABLE` line.
 
 ## Step 10 – Tear down
 
